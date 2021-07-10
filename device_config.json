@@ -1,0 +1,62 @@
+{
+  "brain": {
+    "freeMemRatio": 0.01,
+    "powerStatus": null,
+    "dataPath": "data",
+    "wifiConfigPath": null,
+    "mockCryptoQR": {
+      "BTC": "bc1qamfrcyurew0zzegwtgv8k04x045w5cquqcew94"
+    },
+    "mockCameraImage": "mock_data/compliance/license.jpg"
+  },
+  "cryptomatModel": "gaia",
+  "wifi": {
+    "wpa": {
+      "socket": null
+    }
+  },
+  "billValidator": {
+    "rs232": {
+      "device": null
+    }
+  },
+  "billDispenser": {
+    "device": null,
+    "_mockedBalance": {
+      "cassettes": [
+        {
+          "count": 0
+        },
+        {
+          "count": 0
+        }
+      ]
+    },
+    "_mockedError": {
+      "0x51": [0, 4]
+    }
+  },
+  "frontFacingCamera": {
+    "device": "/dev/video0",
+    "facephoto": {
+      "width": 1280,
+      "height": 960,
+      "threshold": 20,
+      "minFaceSize": 180
+    }
+  },
+  "scanner": {
+    "testnet": false,
+    "device": "/dev/video2",
+    "qr": {
+      "width": 640,
+      "height": 480
+    },
+    "photoId": {
+      "width": 1280,
+      "height": 960,
+      "threshold": 20,
+      "minFaceSize": 180
+    }
+  },
+}
