@@ -16,6 +16,10 @@ if (!printType || (printType !== 'wallet' && printType !== 'receipt')) {
 
 printerLoader.load(deviceConfig.kioskPrinter)
   .then(printer => {
+    
+	console.log(printer);
+        console.log(printer.checkStatus());
+
     if (printType === 'wallet') {
       const wallet = coinUtils.createWallet('BTC')
       printer.printWallet(wallet, deviceConfig.kioskPrinter)

@@ -59,4 +59,8 @@
       "minFaceSize": 180
     }
   },
+  "kioskPrinter":{
+      "model":"Cashino-KP-210H",
+      "address":"/dev/usb/lp3"
+  }
 }
