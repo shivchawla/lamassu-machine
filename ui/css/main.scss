@@ -384,7 +384,7 @@ footer {
   margin-top: 1vh;
 }
 
-.sintra .only-sintra, .douro .only-douro, .gaia .only-gaia {
+.sintra .only-sintra, .douro .only-douro, .gaia .only-gaia, .tejo .only-tejo {
   display: block;
 }
 
@@ -1342,6 +1342,10 @@ footer {
     margin-right: 15vh;
     margin-left: 0;
   }
+  .insert_bills_state footer {
+    padding-left: 0;
+    padding-right: 9.4vw;
+  }
   #networks img {
     margin-right: 14vh;
     margin-left: 0;
@@ -1390,4 +1394,33 @@ footer {
   position: absolute;
   right: 4vh;
   bottom: 0;
+}
+
+.sm-text-height {
+  max-height: 8.5em;
+}
+
+.md-text-height {
+  max-height: 30em;
+}
+
+.lg-text-height {
+  max-height: 47.5em;
+}
+
+.overflow-y-hidden {
+  overflow-y: hidden;
+}
+
+.slow-autoscroll-inner-wrapper {
+  animation: autoscroll 20s linear infinite;
+}
+
+@keyframes autoscroll {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(0, -35%, 0);
+  }
 }
