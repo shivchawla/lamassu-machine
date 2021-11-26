@@ -9,7 +9,7 @@ const deviceConfig = require('../device_config.json')
 
 const printType = process.argv[2]
 
-if (!printType || (printType !== 'wallet' && printType !== 'receipt')) {
+if (!printType || (printType !== 'wallet' && printType !== 'receipt' && printType !== 'test')) {
   console.log('usage: node printer-tests.js <type>')
   console.log(`type can be one of: 'wallet' or 'receipt'`)
 }
@@ -18,7 +18,11 @@ printerLoader.load(deviceConfig.kioskPrinter)
   .then(printer => {
     
 	console.log(printer);
-        console.log(printer.checkStatus());
+//        console.log(printer.checkStatus());
+	if(printType === 'test') {
+		printer.printTest(deviceConfig.kioskPrinter);
+		
+}
 
     if (printType === 'wallet') {
       const wallet = coinUtils.createWallet('BTC')

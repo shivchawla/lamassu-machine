@@ -6,7 +6,7 @@ if (!device) {
 }
 
 console.log('Connecting to: %s', device)
-var config = {currency: 'EUR', rs232: {device: device}}
+var config = {fiatCode: 'USD', rs232: {device: device}}
 var id003 = require('../lib/id003/id003').factory(config)
 
 id003.on('error', function (err) { console.log(err) })
@@ -26,7 +26,7 @@ id003.run(function (err) {
     console.log(err)
     process.exit(1)
   } else {
-    // setTimeout(function () { id003.enable() }, 5000)
+    setTimeout(function () { id003.enable() }, 5000)
     console.log('success.')
   }
 })

@@ -5,13 +5,17 @@ if (!device) {
   process.exit(2)
 }
 
+var config = {currency:"GTQ", rs232: {device}};
+
 console.log('Connecting to: %s', device)
 const billValidator = process.argv[3] === 'ccnet' ?
   require('../lib/ccnet/ccnet')
   :
   require('../lib/id003/id003')
 
-var config = {currency: 'EUR', rs232: {device: device}}
+//var config = {currency: 'EUR', rs232: {device: device}}
+
+console.log(billValidator);
 
 billValidator.on('error', function (err) { console.log(err) })
 billValidator.on('disconnected', function () { console.log('Disconnnected') })
@@ -27,6 +31,7 @@ billValidator.on('standby', function () { console.log('Standby') })
 billValidator.on('jam', function () { console.log('jam') })
 billValidator.on('stackerOpen', function () { console.log('Stacker open') })
 billValidator.on('enabled', function (data) { console.log('Enabled') })
+
 
 billValidator.run(function (err) {
   if (err) {
