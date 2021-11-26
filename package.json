@@ -73,7 +73,7 @@
     "sinon": "^6.3.4",
     "standard": "^12.0.1",
     "x-ray": "^2.3.2",
-    "escpos": "2.5.4"
+    "escpos": "2.5.2"
   },
   "repository": {
     "type": "git",
