@@ -77,3 +77,4 @@ stress-test/config.json
 result.jpg
 
 build-scripts/update.tar
+node-pixel/node_modules/

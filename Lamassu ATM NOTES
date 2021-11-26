@@ -1,0 +1,32 @@
+Lamassu ATM NOTES
+1. Server works with node 14
+2. Machine works with node 10 (and not 12 or 14) -- error with supyo, serialport etc
+3. V4l2Camera is not installed by default
+	Install it via git clone command (and fix error by adding #include<time.h> in capture.h (Issue #30)
+	Instead used @hypersoft/v4l2camer (it’s updated for node 10)
+4. Jpeg-turbo Error
+	Installed @julusian/jpeg-turbo instead (has support for latest node env)
+	What about https://github.com/LinusU/cwasm-jpeg-turbo --- NEVER TESTED!!!
+
+5. Manatee (add this before npm)
+curl -sS https://ssubucket.ams3.digitaloceanspaces.com/barcodescannerlibs.txz | xz -dc | sudo tar -x -C /usr/local/lib --strip-components=2 barcodescannerlibs/amd64/libBarcodeScanner.a
+
+6. Can camera name be change ( may be via symlink) to have more readable names like video-face  and video-scan instead of video0 or video2
+	USED sudo lpinfo -v to get printer address info
+	Issue not resolved yet
+
+7. Update jsqr to 1.4.0 --- Any significance?
+
+8. Not using Manatee because of license issue (PDF417) - commented out code in lib/scanner.js. Is this feature necessary? -- For scanning license but not in Guate
+
+9. Added a printer component for cashino; Using escpos v2.5.4 node component for printing;
+
+
+
+//CODE changes
+1. Replaced manatee by jsQR to read QR codes *No solution for PDF417 yet shivchawla <shivchawla2001@gmail.com> 7ac3b54401000a059ae64f75d1d01eeb3c8bb03c 7/9/2021 6:25:15 PM
+
+2. Added  device config for test shivchawla <shivchawla2001@gmail.com> b269ebb19fcf54d033d18eb4e9604606e38c61a5 7/10/2021 11:56:55 AM
+
+3. Added Printer Code
+
