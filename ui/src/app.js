@@ -46,6 +46,9 @@ var cassettes = null
 let currentCryptoCode = null
 let currentCoin = null
 let currentCoins = []
+let customRequirementNumericalKeypad = null
+let customRequirementTextKeyboard = null
+let customRequirementChoiceList = null
 
 var MUSEO = ['ca', 'cs', 'da', 'de', 'en', 'es', 'et', 'fi', 'fr', 'hr',
   'hu', 'it', 'lt', 'nb', 'nl', 'pl', 'pt', 'ro', 'sl', 'sv', 'tr']
@@ -70,13 +73,15 @@ function buttonPressed (button, data) {
   if (!buttonActive) return
   wifiKeyboard.deactivate()
   promoKeyboard.deactivate()
+  customRequirementTextKeyboard.deactivate()
   buttonActive = false
   setTimeout(function () {
     buttonActive = true
     wifiKeyboard.activate()
     promoKeyboard.activate()
+    customRequirementTextKeyboard.activate()
   }, 300)
-  var res = {button: button}
+  var res = { button: button }
   if (data || data === null) res.data = data
   if (websocket) websocket.send(JSON.stringify(res))
 }
@@ -91,7 +96,7 @@ function processData (data) {
   if (data.buyerAddress) setBuyerAddress(data.buyerAddress)
   if (data.credit) {
     var lastBill = data.action === 'rejectedBill' ? null : data.credit.lastBill
-    setCredit(data.credit.fiat, data.credit.cryptoAtoms, lastBill, data.credit.cryptoCode)
+    setCredit(data.credit, lastBill)
   }
   if (data.tx) setTx(data.tx)
   if (data.wifiList) setWifiList(data.wifiList)
@@ -112,7 +117,10 @@ function processData (data) {
   if (data.hardLimit) setHardLimit(data.hardLimit)
   if (data.cryptomatModel) setCryptomatModel(data.cryptomatModel)
   if (data.areThereAvailablePromoCodes !== undefined) setAvailablePromoCodes(data.areThereAvailablePromoCodes)
-  if (data.receiptStatus) setReceiptPrint(data.receiptStatus)
+
+  if (data.tx && data.tx.discount) setCurrentDiscount(data.tx.discount)
+  if (data.receiptStatus) setReceiptPrint(data.receiptStatus, null)
+  if (data.smsReceiptStatus) setReceiptPrint(null, data.smsReceiptStatus)
 
   if (data.context) {
     $('.js-context').hide()
@@ -197,6 +205,8 @@ function processData (data) {
       setState('trouble')
       break
     case 'balanceLow':
+      setState('limit_reached')
+      break
     case 'insufficientFunds':
       setState('out_of_coins')
       break
@@ -250,6 +260,12 @@ function processData (data) {
     case 'invalidPromoCode':
       setState('promo_code_not_found')
       break
+    case 'customInfoRequest':
+      customInfoRequest(data.customInfoRequest, 1)
+      break
+    case 'customInfoRequestScreen2':
+      customInfoRequest(data.customInfoRequest, 2)
+      break
     default:
       if (data.action) setState(window.snakecase(data.action))
   }
@@ -276,6 +292,58 @@ function facephotoPermission () {
 
 function usSsnPermission () {
   setScreen('us_ssn_permission')
+}
+
+function customInfoRequest (customInfoRequest, screen) {
+  if (screen === 1) {
+    $('#custom-screen1-title').text(customInfoRequest.screen1.title)
+    $('#custom-screen1-text').text(customInfoRequest.screen1.text)
+    return setScreen('custom_permission')
+  }
+  // screen 2
+  switch (customInfoRequest.input.type) {
+    case 'numerical':
+      $('#custom-screen2-numerical-title').text(customInfoRequest.screen2.title)
+      $('#custom-screen2-numerical-text').text(customInfoRequest.screen2.text)
+      customRequirementNumericalKeypad.setOpts({
+        type: 'custom',
+        constraint: customInfoRequest.input.constraintType,
+        maxLength: customInfoRequest.input.numDigits
+      })
+      customRequirementNumericalKeypad.activate()
+      setState('custom_permission_screen2_numerical')
+      setScreen('custom_permission_screen2_numerical')
+      break
+    case 'text':
+      $('#custom-requirement-text-label1').text(customInfoRequest.input.label1)
+      $('#custom-requirement-text-label2').text(customInfoRequest.input.label2)
+      $('#previous-text-requirement').hide()
+      $('#submit-text-requirement').hide()
+      $('#next-text-requirement').hide()
+      $('#optional-text-field-2').hide()
+      $('.key.backspace.standard-backspace-key').removeClass('backspace-margin-left-override')
+      $('.custom-info-request-space-key').show()
+      // set type of constraint and buttons where that constraint should apply to disable/ enable
+      customRequirementTextKeyboard.setConstraint(customInfoRequest.input.constraintType, ['#submit-text-requirement'])
+      if (customInfoRequest.input.constraintType === 'spaceSeparation') {
+        $('#optional-text-field-2').show()
+        $('.key.backspace.standard-backspace-key').addClass('backspace-margin-left-override')
+        $('.custom-info-request-space-key').hide()
+        customRequirementTextKeyboard.setConstraint(customInfoRequest.input.constraintType, ['#next-text-requirement'])
+      }
+      setState('custom_permission_screen2_text')
+      setScreen('custom_permission_screen2_text')
+      break
+    case 'choiceList':
+      $('#custom-screen2-choiceList-title').text(customInfoRequest.screen2.title)
+      $('#custom-screen2-choiceList-text').text(customInfoRequest.screen2.text)
+      customRequirementChoiceList.replaceChoices(customInfoRequest.input.choiceList, customInfoRequest.input.constraintType)
+      setState('custom_permission_screen2_choiceList')
+      setScreen('custom_permission_screen2_choiceList')
+      break
+    default:
+      return blockedCustomer()
+  }
 }
 
 function idVerification () {
@@ -442,7 +510,7 @@ function switchCoin (coin) {
     setTimeout(() => cashOut.removeClass('crypto-switch'), 1000)
   }, 80)
 
-  const selectedIndex = currentCoins.indexOf(currentCoins.find(it => it.cryptoCode === cryptoCode)) 
+  const selectedIndex = currentCoins.indexOf(currentCoins.find(it => it.cryptoCode === cryptoCode))
   if (currentCoins.length > 4 && selectedIndex > 2) {
     currentCoins.splice(2, 0, currentCoins.splice(selectedIndex, 1)[0])
   }
@@ -467,28 +535,57 @@ $(document).ready(function () {
           window.onmouseup =
             function () { return false }
 
-  BigNumber.config({ROUNDING_MODE: BigNumber.ROUND_HALF_EVEN})
+  BigNumber.config({ ROUNDING_MODE: BigNumber.ROUND_HALF_EVEN })
 
-  wifiKeyboard = new Keyboard('wifi-keyboard').init()
+  wifiKeyboard = new Keyboard({
+    id: 'wifi-keyboard',
+    inputBox: '#input-passphrase'
+  }).init()
 
-  promoKeyboard = new Keyboard('promo-keyboard').init(function () {
+  promoKeyboard = new Keyboard({
+    id: 'promo-keyboard',
+    inputBox: '.promo-code-input'
+  }).init(function () {
     if (currentState !== 'insert_promo_code') return
     buttonPressed('cancelPromoCode')
   })
 
-  usSsnKeypad = new Keypad('us-ssn-keypad', {type: 'usSsn'}, function (result) {
+  usSsnKeypad = new Keypad('us-ssn-keypad', { type: 'usSsn' }, function (result) {
     if (currentState !== 'register_us_ssn') return
     buttonPressed('usSsn', result)
   })
 
-  phoneKeypad = new Keypad('phone-keypad', {type: 'phoneNumber', country: 'US'}, function (result) {
+  phoneKeypad = new Keypad('phone-keypad', { type: 'phoneNumber', country: 'US' }, function (result) {
     if (currentState !== 'register_phone') return
     buttonPressed('phoneNumber', result)
   })
 
-  securityKeypad = new Keypad('security-keypad', {type: 'code'}, function (result) {
+  securityKeypad = new Keypad('security-keypad', { type: 'code' }, function (result) {
     if (currentState !== 'security_code') return
     buttonPressed('securityCode', result)
+  })
+
+  customRequirementNumericalKeypad = new Keypad('custom-requirement-numeric-keypad', {
+    type: 'custom'
+  }, function (result) {
+    if (currentState !== 'custom_permission_screen2_numerical') return
+    buttonPressed('customInfoRequestSubmit', result)
+  })
+
+  customRequirementTextKeyboard = new Keyboard({
+    id: 'custom-requirement-text-keyboard',
+    inputBox: '.text-input-field-1',
+    submitButtonWrapper: '.submit-text-requirement-button-wrapper'
+  }).init(function () {
+    if (currentState !== 'custom_permission_screen2_text') return
+    buttonPressed('customInfoRequestSubmit')
+  })
+
+  customRequirementChoiceList = new ChoiceList({
+    id: 'custom-requirement-choicelist-wrapper'
+  }).init(function (result) {
+    if (currentState !== 'custom_permission_screen2_choiceList') return
+    buttonPressed('customInfoRequestSubmit', result)
   })
 
   if (DEBUG_MODE !== 'demo') {
@@ -514,7 +611,7 @@ $(document).ready(function () {
         var displaySsid = ssidEl.text()
         var rawSsid = ssidEl.data('raw-ssid')
         buttonPressed('wifiSelect',
-          {ssid: ssid, rawSsid: rawSsid, displaySsid: displaySsid})
+          { ssid: ssid, rawSsid: rawSsid, displaySsid: displaySsid })
       }
     }
   })
@@ -527,7 +624,7 @@ $(document).ready(function () {
     var pass = $('#wifi-keyboard input.passphrase').data('content')
     var ssid = $('#js-i18n-wifi-for-ssid').data('ssid')
     var rawSsid = $('#js-i18n-wifi-for-ssid').data('raw-ssid')
-    buttonPressed('wifiConnect', {pass: pass, ssid: ssid, rawSsid: rawSsid})
+    buttonPressed('wifiConnect', { pass: pass, ssid: ssid, rawSsid: rawSsid })
   })
 
   var sendCoinsButton = document.getElementById('send-coins')
@@ -582,6 +679,35 @@ $(document).ready(function () {
     promoKeyboard.deactivate.bind(promoKeyboard)
     var code = $('.promo-code-input').data('content')
     buttonPressed('submitPromoCode', { input: code })
+  })
+
+  const submitTextRequirementButton = document.getElementById('submit-text-requirement')
+  const nextFieldTextRequirementButton = document.getElementById('next-text-requirement')
+  const previousFieldTextRequirementButton = document.getElementById('previous-text-requirement')
+  touchEvent(submitTextRequirementButton, function () {
+    customRequirementTextKeyboard.deactivate.bind(customRequirementTextKeyboard)
+    var text = `${$('.text-input-field-1').data('content')} ${$('.text-input-field-2').data('content') || ''}`
+    buttonPressed('customInfoRequestSubmit', text)
+    $('.text-input-field-1').removeClass('faded').data('content', '').val('')
+    $('.text-input-field-2').addClass('faded').data('content', '').val('')
+    customRequirementTextKeyboard.setInputBox('.text-input-field-1')
+  })
+  touchEvent(nextFieldTextRequirementButton, function() {
+    $('.text-input-field-1').addClass('faded')
+    $('.text-input-field-2').removeClass('faded')
+    $('#next-text-requirement').hide()
+    $('#previous-text-requirement').show()
+    $('#submit-text-requirement').show()
+    // changing input box changes buttons where validation works on
+    customRequirementTextKeyboard.setInputBox('.text-input-field-2', ['#submit-text-requirement'])
+  })
+  touchEvent(previousFieldTextRequirementButton, function() {
+    $('.text-input-field-1').removeClass('faded')
+    $('.text-input-field-2').addClass('faded')
+    $('#next-text-requirement').show()
+    $('#previous-text-requirement').hide()
+    $('#submit-text-requirement').hide()
+    customRequirementTextKeyboard.setInputBox('.text-input-field-1', ['#next-text-requirement'])
   })
 
   setupButton('submit-promo-code', 'submitPromoCode', {
@@ -639,10 +765,14 @@ $(document).ready(function () {
   setupButton('unconfirmed-deposit-ok', 'idle')
   setupButton('tx-not-seen-ok', 'idle')
   setupButton('wrong-dispenser-currency-ok', 'idle')
-  
+
   setupButton('print-receipt-cash-in-button', 'printReceipt')
   setupButton('print-receipt-cash-out-button', 'printReceipt')
   setupButton('print-receipt-cash-in-fail-button', 'printReceipt')
+
+  setupButton('send-sms-receipt-cash-in-button', 'sendSmsReceipt')
+  setupButton('send-sms-receipt-cash-out-button', 'sendSmsReceipt')
+  setupButton('send-sms-receipt-cash-in-fail-button', 'sendSmsReceipt')
 
   setupButton('terms-ok', 'termsAccepted')
   setupButton('terms-ko', 'idle')
@@ -666,8 +796,13 @@ $(document).ready(function () {
       return
     }
 
-    const coin = { cryptoCode: el.data('cryptoCode'), display: el.text() }
-    if (!coin.cryptoCode) return
+    const cryptoCode = el.data('cryptoCode')
+    if (!cryptoCode) return
+
+    const wantedCoin = currentCoins.find(it => it.cryptoCode === cryptoCode)
+    if (!wantedCoin) return
+
+    const coin = { cryptoCode, display: wantedCoin.display }
     switchCoin(coin)
   })
 
@@ -700,6 +835,32 @@ $(document).ready(function () {
   setupButton('us-ssn-cancel', 'finishBeforeSms')
   setupButton('facephoto-scan-failed-cancel', 'finishBeforeSms')
   setupButton('facephoto-scan-failed-cancel2', 'finishBeforeSms')
+
+  setupButton('custom-permission-yes', 'customInfoRequestPermission')
+  setupButton('custom-permission-no', 'finishBeforeSms')
+  setupImmediateButton('custom-permission-cancel-numerical', 'cancelCustomInfoRequest', () => {
+    customRequirementNumericalKeypad.deactivate.bind(customRequirementNumericalKeypad)
+  })
+  setupImmediateButton('custom-permission-cancel-text', 'cancelCustomInfoRequest', () => {
+    customRequirementTextKeyboard.deactivate.bind(customRequirementTextKeyboard)
+    $('.text-input-field-1').removeClass('faded').data('content', '').val('')
+    $('.text-input-field-2').addClass('faded').data('content', '').val('')
+    customRequirementTextKeyboard.setInputBox('.text-input-field-1')
+  })
+  setupImmediateButton('custom-permission-cancel-choiceList', 'cancelCustomInfoRequest', () => {
+  })
+
+  setupButton('custom-permission-yes', 'customInfoRequestPermission')
+  setupButton('custom-permission-no', 'finishBeforeSms')
+  setupImmediateButton('custom-permission-cancel-numerical', 'cancelCustomInfoRequest', () => {
+    customRequirementNumericalKeypad.deactivate.bind(customRequirementNumericalKeypad)
+  })
+  setupImmediateButton('custom-permission-cancel-text', 'cancelCustomInfoRequest', () => {
+    customRequirementTextKeyboard.deactivate.bind(customRequirementTextKeyboard)
+    $('.text-input-field-1').removeClass('faded').data('content', '').val('')
+    $('.text-input-field-2').addClass('faded').data('content', '').val('')
+    customRequirementTextKeyboard.setInputBox('.text-input-field-1')
+  })
 
   touchEvent(document.getElementById('change-language-section'), () => {
     if (_primaryLocales.length === 2) {
@@ -761,7 +922,7 @@ $(document).ready(function () {
     if (cashButtonJ.hasClass('clear')) return buttonPressed('clearFiat')
     var denominationIndex = cashButtonJ.attr('data-denomination-index')
     var denominationRec = cassettes[denominationIndex]
-    buttonPressed('fiatButton', {denomination: denominationRec.denomination})
+    buttonPressed('fiatButton', { denomination: denominationRec.denomination })
   })
 
   initDebug()
@@ -857,6 +1018,7 @@ function setState (state, delay) {
 
   wifiKeyboard.reset()
   promoKeyboard.reset()
+  customRequirementTextKeyboard.reset()
 
   if (state === 'idle') {
     $('.qr-code').empty()
@@ -881,7 +1043,7 @@ function setWifiList (recs, requestedPage) {
     offset = 0
     page = 0
   }
-  $('#more-networks').css({'display': 'none'})
+  $('#more-networks').css({ 'display': 'none' })
   networks.empty()
   networks.data('page', page)
   networks.data('recs', recs)
@@ -940,7 +1102,7 @@ function setHardLimit (limits) {
 
 function setCryptomatModel (model) {
   cryptomatModel = model
-  const versions = ['sintra', 'douro', 'gaia']
+  const versions = ['sintra', 'douro', 'gaia', 'tejo']
   const body = $('body')
 
   versions.forEach(it => body.removeClass(it))
@@ -982,7 +1144,11 @@ function setDirection (direction) {
     $('.retry_permission_id_state'),
     $('.waiting_state'),
     $('.insert_promo_code_state'),
-    $('.promo_code_not_found_state')
+    $('.promo_code_not_found_state'),
+    $('.custom_permission_state'),
+    $('.custom_permission_screen2_numerical_state'),
+    $('.custom_permission_screen2_text_state'),
+    $('.custom_permission_screen2_choiceList_state')
   ]
   states.forEach(it => {
     setUpDirectionElement(it, direction)
@@ -1271,11 +1437,12 @@ function setFixedFee (_fee) {
   }
 }
 
-function setCredit (fiat, crypto, lastBill, cryptoCode) {
+function setCredit (credit, lastBill) {
+  const { fiat, cryptoAtoms, cryptoCode } = credit
   var coin = getCryptoCurrency(cryptoCode)
 
   var scale = new BigNumber(10).pow(coin.displayScale)
-  var cryptoAmount = new BigNumber(crypto).div(scale).toNumber()
+  var cryptoAmount = new BigNumber(cryptoAtoms).div(scale).toNumber()
   var cryptoDisplayCode = coin.displayCode
   updateCrypto('.total-crypto-rec', cryptoAmount, cryptoDisplayCode)
   $('.amount-deposited').html(translate('You deposited %s', [`${fiat} ${fiatCode}`]))
@@ -1337,7 +1504,7 @@ function splitNumber (localize, localeCode) {
 function formatNumber (num) {
   var localized = num.toLocaleString(jsLocaleCode, {
     useGrouping: true,
-    maximumFractionDigits: 3,
+    maximumFractionDigits: 6,
     minimumFractionDigits: 3
   })
 
@@ -1460,9 +1627,9 @@ function setBuyerAddress (address) {
 function setAccepting (currentAccepting) {
   accepting = currentAccepting
   if (accepting) {
-    $('.bill img').transition({x: 0, y: -303}, 1000, 'ease-in')
+    $('.bill img').transition({ x: 0, y: -303 }, 1000, 'ease-in')
   } else {
-    $('.bill img').transition({x: 0, y: 0}, 1000, 'ease-out')
+    $('.bill img').transition({ x: 0, y: 0 }, 1000, 'ease-out')
   }
 }
 
@@ -1601,7 +1768,9 @@ function manageFiatButtons (activeDenominations) {
 function displayCrypto (cryptoAtoms, cryptoCode) {
   var coin = getCryptoCurrency(cryptoCode)
   var scale = new BigNumber(10).pow(coin.displayScale)
-  var cryptoAmount = new BigNumber(cryptoAtoms).div(scale).round(3).toNumber()
+  // number of decimal places vary based on displayScale value
+  var decimalPlaces = (coin.displayScale - coin.unitScale) + 6
+  var cryptoAmount = new BigNumber(cryptoAtoms).div(scale).round(decimalPlaces).toNumber()
   var cryptoDisplay = formatCrypto(cryptoAmount)
 
   return cryptoDisplay
@@ -1720,9 +1889,9 @@ function initDebug () {
 
     if (!SCREEN) {
       return chooseCoin([
-        {display: 'Bitcoin', cryptoCode: 'BTC'},
-        {display: 'Ethereum', cryptoCode: 'ETH'},
-        {display: 'ZCash', cryptoCode: 'ZEC'}
+        { display: 'Bitcoin', cryptoCode: 'BTC' },
+        { display: 'Ethereum', cryptoCode: 'ETH' },
+        { display: 'ZCash', cryptoCode: 'ZEC' }
       ], true)
     }
 
@@ -1837,6 +2006,7 @@ function setCurrentDiscount (currentDiscount, promoCodeApplied) {
     $('#choose-fiat-code-added').html(successMessage)
     $('#insert-first-bill-code-added').show()
     $('#choose-fiat-code-added').show()
+
   } else {
     $('#insert-first-bill-promo-button').show()
     $('#choose-fiat-promo-button').show()
@@ -1845,59 +2015,67 @@ function setCurrentDiscount (currentDiscount, promoCodeApplied) {
   }
 }
 
-function setReceiptPrint (receiptStatus) {
-  switch (receiptStatus) {
+function setReceiptPrint (receiptStatus, smsReceiptStatus) {
+  let status = null
+  if (receiptStatus) status = receiptStatus
+  else status = smsReceiptStatus
+
+  const className = receiptStatus ? 'print-receipt' : 'send-sms-receipt'
+  const printing = receiptStatus ? 'Printing receipt...' : 'Sending receipt...'
+  const success = receiptStatus ? 'Receipt printed successfully!' : 'Receipt sent successfully!'
+
+  switch (status) {
     case 'disabled':
-      $('#print-receipt-cash-in-message').addClass('hide')
-      $('#print-receipt-cash-in-button').addClass('hide')
-      $('#print-receipt-cash-out-message').addClass('hide')
-      $('#print-receipt-cash-out-button').addClass('hide')
-      $('#print-receipt-cash-in-fail-message').addClass('hide')
-      $('#print-receipt-cash-in-fail-button').addClass('hide')
+      $(`#${className}-cash-in-message`).addClass('hide')
+      $(`#${className}-cash-in-button`).addClass('hide')
+      $(`#${className}-cash-out-message`).addClass('hide')
+      $(`#${className}-cash-out-button`).addClass('hide')
+      $(`#${className}-cash-in-fail-message`).addClass('hide')
+      $(`#${className}-cash-in-fail-button`).addClass('hide')
       break
     case 'available':
-      $('#print-receipt-cash-in-message').addClass('hide')
-      $('#print-receipt-cash-in-button').removeClass('hide')
-      $('#print-receipt-cash-out-message').addClass('hide')
-      $('#print-receipt-cash-out-button').removeClass('hide')
-      $('#print-receipt-cash-in-fail-message').addClass('hide')
-      $('#print-receipt-cash-in-fail-button').removeClass('hide')
+      $(`#${className}-cash-in-message`).addClass('hide')
+      $(`#${className}-cash-in-button`).removeClass('hide')
+      $(`#${className}-cash-out-message`).addClass('hide')
+      $(`#${className}-cash-out-button`).removeClass('hide')
+      $(`#${className}-cash-in-fail-message`).addClass('hide')
+      $(`#${className}-cash-in-fail-button`).removeClass('hide')
       break
     case 'printing':
-      const message = locale.translate('Printing receipt...').fetch()
-      $('#print-receipt-cash-in-button').addClass('hide')
-      $('#print-receipt-cash-in-message').html(message)
-      $('#print-receipt-cash-in-message').removeClass('hide')
-      $('#print-receipt-cash-out-button').addClass('hide')
-      $('#print-receipt-cash-out-message').html(message)
-      $('#print-receipt-cash-out-message').removeClass('hide')
-      $('#print-receipt-cash-in-fail-button').addClass('hide')
-      $('#print-receipt-cash-in-fail-message').html(message)
-      $('#print-receipt-cash-in-fail-message').removeClass('hide')
+      const message = locale.translate(printing).fetch()
+      $(`#${className}-cash-in-button`).addClass('hide')
+      $(`#${className}-cash-in-message`).html(message)
+      $(`#${className}-cash-in-message`).removeClass('hide')
+      $(`#${className}-cash-out-button`).addClass('hide')
+      $(`#${className}-cash-out-message`).html(message)
+      $(`#${className}-cash-out-message`).removeClass('hide')
+      $(`#${className}-cash-in-fail-button`).addClass('hide')
+      $(`#${className}-cash-in-fail-message`).html(message)
+      $(`#${className}-cash-in-fail-message`).removeClass('hide')
       break
     case 'success':
-      const successMessage = '✔ ' + locale.translate('Receipt printed successfully!').fetch()
-      $('#print-receipt-cash-in-button').addClass('hide')
-      $('#print-receipt-cash-in-message').html(successMessage)
-      $('#print-receipt-cash-in-message').removeClass('hide')
-      $('#print-receipt-cash-out-button').addClass('hide')
-      $('#print-receipt-cash-out-message').html(successMessage)
-      $('#print-receipt-cash-out-message').removeClass('hide')
-      $('#print-receipt-cash-in-fail-button').addClass('hide')
-      $('#print-receipt-cash-in-fail-message').html(successMessage)
-      $('#print-receipt-cash-in-fail-message').removeClass('hide')
+      const successMessage = '✔ ' + locale.translate(success).fetch()
+      $(`#${className}-cash-in-button`).addClass('hide')
+      $(`#${className}-cash-in-message`).html(successMessage)
+      $(`#${className}-cash-in-message`).removeClass('hide')
+      $(`#${className}-cash-out-button`).addClass('hide')
+      $(`#${className}-cash-out-message`).html(successMessage)
+      $(`#${className}-cash-out-message`).removeClass('hide')
+      $(`#${className}-cash-in-fail-button`).addClass('hide')
+      $(`#${className}-cash-in-fail-message`).html(successMessage)
+      $(`#${className}-cash-in-fail-message`).removeClass('hide')
       break
     case 'failed':
       const failMessage = '✖ ' + locale.translate('An error occurred, try again.').fetch()
-      $('#print-receipt-cash-in-button').addClass('hide')
-      $('#print-receipt-cash-in-message').html(failMessage)
-      $('#print-receipt-cash-in-message').removeClass('hide')
-      $('#print-receipt-cash-out-button').addClass('hide')
-      $('#print-receipt-cash-out-message').html(failMessage)
-      $('#print-receipt-cash-out-message').removeClass('hide')
-      $('#print-receipt-cash-in-fail-button').addClass('hide')
-      $('#print-receipt-cash-in-fail-message').html(failMessage)
-      $('#print-receipt-cash-in-fail-message').removeClass('hide')
+      $(`#${className}-cash-in-button`).addClass('hide')
+      $(`#${className}-cash-in-message`).html(failMessage)
+      $(`#${className}-cash-in-message`).removeClass('hide')
+      $(`#${className}-cash-out-button`).addClass('hide')
+      $(`#${className}-cash-out-message`).html(failMessage)
+      $(`#${className}-cash-out-message`).removeClass('hide')
+      $(`#${className}-cash-in-fail-button`).addClass('hide')
+      $(`#${className}-cash-in-fail-message`).html(failMessage)
+      $(`#${className}-cash-in-fail-message`).removeClass('hide')
       break
   }
 }
