@@ -61,6 +61,6 @@
   },
   "kioskPrinter":{
       "model":"Cashino-KP-210H",
-      "address":"/dev/usb/lp3"
+      "address":"/dev/ttyS1"
   }
 }
